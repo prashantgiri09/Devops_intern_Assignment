@@ -18,38 +18,44 @@ After that i have created a new user by the command **sudo adduser devops_intern
 To allow **devops_intern** to run administrative commands without being prompted for a password, I added a sudoers configuration.
 
 
-**sudo visudo -f /etc/sudoers.d/devops_intern**
+```**sudo visudo -f /etc/sudoers.d/devops_intern**
+```
 
 Inside the file, I added:
 
-**devops_intern ALL=(ALL) NOPASSWD:ALL**
+```**devops_intern ALL=(ALL) NOPASSWD:ALL**
+```
 
 This ensures the user has full sudo privileges.
 
 I updated the hostname to make the server easily identifiable.
 
-**sudo hostnamectl set-hostname prashant-devops**
+```**sudo hostnamectl set-hostname prashant-devops**
+```
 Then updated /etc/hosts:
 
-**sudo nano /etc/hosts**
+```**sudo nano /etc/hosts**
+```
 Replaced old hostname with:
 
 127.0.0.1   prashant-devops
 Rebooted the system:
-sudo reboot
+```sudo reboot
+```
 Reconnect using SSH afterward.
 
 #Part 2
 
 I installed Nginx, which serves static content by default.
 
-**sudo apt update
+```**sudo apt update
 sudo apt install nginx -y**
+```
 After installation, the service starts automatically.
 
 The goal was to display my name, the EC2 instance ID (fetched from metadata), and uptime.
 
-**sudo tee /var/www/html/index.html > /dev/null <<EOF
+```**sudo tee /var/www/html/index.html > /dev/null <<EOF
 <html>
 <body>
 <h1>DevOps Intern Task</h1>
@@ -59,15 +65,17 @@ The goal was to display my name, the EC2 instance ID (fetched from metadata), an
 </body>
 </html>
 EOF**
+```
 I accessed it through:
-http://<PUBLIC_IP>
+```http://PUBLIC_IP
+```
 
 #part 3
 
 The script outputs date, uptime, CPU usage, memory usage, disk usage, and top processes.
 
 
-**sudo tee /usr/local/bin/system_report.sh > /dev/null <<'EOF'
+```**sudo tee /usr/local/bin/system_report.sh > /dev/null <<'EOF'
 #!/bin/bash
 echo "===================="
 echo "Date & Time: $(date)"
@@ -79,33 +87,38 @@ echo "Top 3 CPU-consuming processes:"
 ps -eo pid,pcpu,comm --sort=-pcpu | head -n 4
 echo ""
 EOF**
+```
 Make executable:
 
-**sudo chmod 755 /usr/local/bin/system_report.sh**
+```**sudo chmod 755 /usr/local/bin/system_report.sh**
+```
 
 I scheduled it to run every 5 minutes and store logs to /var/log/system_report.log.
 
-**sudo crontab -e**
+```**sudo crontab -e**
+```
 
 Added:
 
-***/5 * * * * /usr/local/bin/system_report.sh >> /var/log/system_report.log 2>&1**
+```***/5 * * * * /usr/local/bin/system_report.sh >> /var/log/system_report.log 2>&1**
+```
 
 #Part 4
 
 Since the Ubuntu AMI did not include AWS CLI by default, I installed AWS CLI v2 manually.
 This allowed me to interact with AWS CloudWatch from the EC2 instance.
 
-**cd /tmp
+```**cd /tmp
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
 After installation, I verified it using aws --version.
 **
-
+```
 To authenticate my instance with AWS services, I configured the AWS CLI using IAM access keys.
 
-**aws configure**
+```**aws configure**
+```
 I entered:
 
 AWS Access Key ID
@@ -122,26 +135,29 @@ A Log Group is a top-level container in CloudWatch where logs are stored.
 
 I created the required log group named:
 
-**/devops/intern-metrics**
+```**/devops/intern-metrics**
+```
 Command:
 
-**aws logs create-log-group \
+```**aws logs create-log-group \
   --log-group-name /devops/intern-metrics \
   --region ap-south-1**
+```
 
   Inside the log group, CloudWatch needs a log stream, which acts like a sub-folder where logs are appended.
 
 
-**aws logs create-log-stream \
+```**aws logs create-log-stream \
   --log-group-name /devops/intern-metrics \
   --log-stream-name intern-stream \
   --region ap-south-1**
+```
 
   CloudWatch expects logs in a JSON format with timestamps.
   
 Since /var/log/system_report.log is a plain text file, I converted it into a JSON events file using Python.
 
-**python3 - <<'EOF' > /tmp/events.json
+```**python3 - <<'EOF' > /tmp/events.json
 import time, json
 events=[]
 now=int(time.time()*1000)
@@ -149,14 +165,16 @@ for line in open('/var/log/system_report.log'):
     events.append({"timestamp": now, "message": line.strip()})
 print(json.dumps(events))
 EOF**
+```
 
 With the log group, log stream, and events file ready, I pushed the log data into CloudWatch Logs:
 
-**aws logs put-log-events \
+```**aws logs put-log-events \
   --log-group-name /devops/intern-metrics \
   --log-stream-name intern-stream \
   --log-events file:///tmp/events.json \
   --region ap-south-1**
+```
 After running this command successfully, the monitoring script logs appeared in the CloudWatch Logs console.
 
 #part 5 (OPTIONAL)
@@ -165,7 +183,7 @@ While cron works fine for periodic execution, systemd timers offer better reliab
 Using systemd makes the monitoring script behave more like a proper Linux service, which is the standard in modern DevOps environments.
 
 Create the systemd service
-
+```
 **sudo tee /etc/systemd/system/system_report.service > /dev/null <<EOF**
 **[Unit]
 Description=Run system report script
@@ -174,10 +192,11 @@ Description=Run system report script
 Type=oneshot
 ExecStart=/usr/local/bin/system_report.sh >> /var/log/system_report.log 2>&1
 EOF**
+```
 
 Create the systemd timer
 
-**sudo tee /etc/systemd/system/system_report.timer > /dev/null <<EOF
+```**sudo tee /etc/systemd/system/system_report.timer > /dev/null <<EOF
 [Unit]
 Description=Run system report every 5 minutes
 
@@ -189,15 +208,17 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF**
-
+```
 Enable and start the timer
 
-**sudo systemctl daemon-reload
+```**sudo systemctl daemon-reload
 sudo systemctl enable --now system_report.timer**
+```
 
 Check next scheduled run
 
-**systemctl list-timers | grep system_report**
+```**systemctl list-timers | grep system_report**
+```
 
 To add alerting capability, I integrated AWS SES so that an email is sent when the disk usage exceeds a defined threshold (80%).
 This brings real monitoring behavior into the system: whenever the server is low on disk space, an automated notification email is sent to:
@@ -214,7 +235,7 @@ Once verified, the script uses AWS CLI to send an alert.
 
 Updated system_report.sh with alert logic
 
-**sudo tee /usr/local/bin/system_report.sh > /dev/null <<'EOF'
+```**sudo tee /usr/local/bin/system_report.sh > /dev/null <<'EOF'
 #!/bin/bash
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 HOSTNAME="$(hostname)"
@@ -247,7 +268,9 @@ EOF**
 Make script executable again:
 **sudo chmod 755 /usr/local/bin/system_report.sh**
 **
-How AWS SES Was Configured**
+```
+How AWS SES Was Configured
+
 Open AWS Console → Amazon SES (Region: ap-south-1)
 
 Go to Verified Identities
@@ -259,3 +282,5 @@ Enter connecttoprashantgiri@gmail.com
 SES sends a verification email → click the link
 
 Once status becomes Verified, SES can send and receive email
+
+These are all the steps which i have followed and i have completed the task and attached the screenshots.
